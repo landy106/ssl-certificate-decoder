@@ -5,9 +5,9 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -31,12 +31,10 @@ func makeUI(w fyne.Window) fyne.CanvasObject {
 	header.TextSize = 42
 	header.Alignment = fyne.TextAlignCenter
 
-	u, _ := url.Parse("https://github.com/able8/ssl-certificate-decoder")
-	footer := widget.NewHyperlinkWithStyle("github.com/able8/ssl-certificate-decoder", u, fyne.TextAlignCenter, fyne.TextStyle{})
 
 	input := widget.NewEntry()
 	input.MultiLine = true
-	input.Wrapping = fyne.TextWrapBreak
+	input.Wrapping = fyne.TextWrapWord
 	input.SetPlaceHolder(`Paste your certificate here Or Read from Clipboard.
 Your certificate should start with "-----BEGIN CERTIFICATE----- " and end with "-----END CERTIFICATE----- "`)
 
@@ -44,6 +42,30 @@ Your certificate should start with "-----BEGIN CERTIFICATE----- " and end with "
 	output.MultiLine = true
 	output.Wrapping = fyne.TextWrapBreak
 	output.SetPlaceHolder("Output Result")
+
+	// 让窗口支持拖拽
+	w.SetOnDropped(func(pos fyne.Position, uris []fyne.URI) {
+		// 处理拖拽的文件列表
+		for _, uri := range uris {
+			fileInfo, err := os.Stat(uri.Path())
+			if err != nil {
+				output.SetText(fmt.Sprintf("Read file information failed: %v", err))
+				continue
+			}
+			if fileInfo.IsDir() {
+				output.SetText("Error: supports CRT file only")
+				continue
+			}
+			content, err := os.ReadFile(uri.Path())
+			if err != nil {
+				output.SetText(fmt.Sprintf("Error: %v\n", err))
+				continue
+			}
+			input.SetText(string(content))
+			output.SetText(GetCertificateInfo(content))
+		}
+
+	})
 
 	openFile := widget.NewButtonWithIcon("Open File", theme.FolderOpenIcon(), func() {
 		fd := dialog.NewFileOpen(func(in fyne.URIReadCloser, err error) {
@@ -110,7 +132,7 @@ Your certificate should start with "-----BEGIN CERTIFICATE----- " and end with "
 	})
 	copy.Importance = widget.WarningImportance
 
-	return container.NewBorder(header, footer, nil, nil,
+	return container.NewBorder(header, nil, nil, nil,
 		container.NewGridWithRows(2,
 			container.NewBorder(nil, container.NewVBox(decode, container.NewGridWithColumns(3, openFile, copy, clear)), nil, nil, input), output),
 	)
@@ -130,26 +152,25 @@ func GetCertificateInfo(certData []byte) string {
 	}
 
 	// Construct the certificate information string
-	certificateInfo := fmt.Sprintf("Certificate Information:\n"+
-		"Common Name: %s\n"+
-		"Subject: %s\n"+
+	var certificateInfo strings.Builder
+
+	fmt.Fprintf(&certificateInfo, "Common Name: %s\n"+
 		"Validity:\n"+
-		"\tValid From: %s\n"+
-		"\tValid To: %s\n"+
+		"\tValid From:\t%s\n"+
+		"\tValid To:\t%s\n"+
 		"Subject Alternative Names:\n",
 		cert.Subject.CommonName,
-		cert.Subject.String(),
-		cert.NotBefore.UTC().Format("Jan _2 15:04:05 2006 MST"),
-		cert.NotAfter.UTC().Format("Jan _2 15:04:05 2006 MST"))
+		cert.NotBefore.UTC().Format(time.DateTime),
+		cert.NotAfter.UTC().Format(time.DateTime))
 
 	for _, name := range cert.DNSNames {
-		certificateInfo += fmt.Sprintf("\t- %s\n", name)
+		fmt.Fprintf(&certificateInfo, "\t- %s\n", name)
 	}
 
-	certificateInfo += fmt.Sprintf("Issuer: %s\n"+
+	fmt.Fprintf(&certificateInfo, "Issuer: %s\n"+
 		"Serial Number: %s",
 		cert.Issuer.String(),
 		cert.SerialNumber.String())
 
-	return certificateInfo
+	return certificateInfo.String()
 }
