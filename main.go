@@ -22,21 +22,21 @@ func main() {
 	a := app.New()
 	w := a.NewWindow("SSL Certificate Decoder")
 	w.SetContent(makeUI(w))
-	w.Resize(fyne.NewSize(600, 700))
+	w.Resize(fyne.NewSize(630, 650))
 	w.ShowAndRun()
 }
 
 func makeUI(w fyne.Window) fyne.CanvasObject {
-	header := canvas.NewText("SSL Certificate Decoder", theme.PrimaryColor())
-	header.TextSize = 42
+	header := canvas.NewText("SSL Certificate Decoder", theme.Color(theme.ColorNamePrimary))
+	header.TextSize = 24
 	header.Alignment = fyne.TextAlignCenter
-
 
 	input := widget.NewEntry()
 	input.MultiLine = true
-	input.Wrapping = fyne.TextWrapWord
+	input.Wrapping = fyne.TextWrapOff
 	input.SetPlaceHolder(`Paste your certificate here Or Read from Clipboard.
-Your certificate should start with "-----BEGIN CERTIFICATE----- " and end with "-----END CERTIFICATE----- "`)
+Your certificate should start with "-----BEGIN CERTIFICATE----- " 
+and end with "-----END CERTIFICATE----- "`)
 
 	output := widget.NewEntry()
 	output.MultiLine = true
@@ -49,26 +49,27 @@ Your certificate should start with "-----BEGIN CERTIFICATE----- " and end with "
 		for _, uri := range uris {
 			fileInfo, err := os.Stat(uri.Path())
 			if err != nil {
-				output.SetText(fmt.Sprintf("Read file information failed: %v", err))
+				dialog.ShowError(fmt.Errorf("Read file information failed: %v", err), w)
 				continue
 			}
 			if fileInfo.IsDir() {
-				output.SetText("Error: supports CRT file only")
+				dialog.ShowError(fmt.Errorf("Error: Support CRT file only"), w)
 				continue
 			}
 			content, err := os.ReadFile(uri.Path())
 			if err != nil {
-				output.SetText(fmt.Sprintf("Error: %v\n", err))
+				dialog.ShowError(fmt.Errorf("Error: Read file content failed: %v\n", err), w)
 				continue
 			}
 			input.SetText(string(content))
-			output.SetText(GetCertificateInfo(content))
-		}
 
+			out := GetCertificateInfo(content)
+			output.SetText(fmt.Sprintf("%s\n\nFile name: %s", out, uri.String()))
+		}
 	})
 
 	openFile := widget.NewButtonWithIcon("Open File", theme.FolderOpenIcon(), func() {
-		fd := dialog.NewFileOpen(func(in fyne.URIReadCloser, err error) {
+		dialog.ShowFileOpen(func(in fyne.URIReadCloser, err error) {
 			if err != nil {
 				dialog.ShowError(fmt.Errorf("Failed to open file: %w", err), w)
 				return
@@ -80,7 +81,7 @@ Your certificate should start with "-----BEGIN CERTIFICATE----- " and end with "
 			certData, err := os.ReadFile(in.URI().Path())
 			if err != nil {
 				log.Fatal("Error reading certificate file:", err)
-				dialog.ShowError(fmt.Errorf("Error reading certificate file:", err), w)
+				dialog.ShowError(fmt.Errorf("Error reading certificate file: %w", err), w)
 				return
 			}
 
@@ -90,16 +91,13 @@ Your certificate should start with "-----BEGIN CERTIFICATE----- " and end with "
 			}
 
 			// fmt.Println("MimeType:", in.URI().MimeType())
-			input.Text = string(certData)
-			input.Refresh()
+			input.SetText(string(certData))
 
 			out := GetCertificateInfo(certData)
-			output.Text = fmt.Sprintf("%s\n\nFile name: %s", out, in.URI().String())
-			output.Refresh()
+			output.SetText(fmt.Sprintf("%s\n\nFile name: %s", out, in.URI().String()))
+
 		}, w)
-		fd.Show()
-	},
-	)
+	})
 	openFile.Importance = widget.HighImportance
 
 	clear := widget.NewButtonWithIcon("clear", theme.ContentClearIcon(), func() {
@@ -112,7 +110,7 @@ Your certificate should start with "-----BEGIN CERTIFICATE----- " and end with "
 
 	decode := widget.NewButtonWithIcon("Decode", theme.MediaPlayIcon(), func() {
 		if input.Text == "" {
-			input.Text = w.Clipboard().Content()
+			input.Text = fyne.CurrentApp().Clipboard().Content()
 			input.Refresh()
 		}
 		out := GetCertificateInfo([]byte(input.Text))
@@ -122,7 +120,7 @@ Your certificate should start with "-----BEGIN CERTIFICATE----- " and end with "
 	decode.Importance = widget.HighImportance
 
 	copy := widget.NewButtonWithIcon("Cut Result", theme.ContentCutIcon(), func() {
-		clipboard := w.Clipboard()
+		clipboard := fyne.CurrentApp().Clipboard()
 		clipboard.SetContent(output.Text)
 		output.Text = ""
 		output.Refresh()
@@ -167,10 +165,11 @@ func GetCertificateInfo(certData []byte) string {
 		fmt.Fprintf(&certificateInfo, "\t- %s\n", name)
 	}
 
-	fmt.Fprintf(&certificateInfo, "Issuer: %s\n"+
-		"Serial Number: %s",
-		cert.Issuer.String(),
-		cert.SerialNumber.String())
+	fmt.Fprintf(&certificateInfo,
+		"Serial Number: %s\n"+
+			"Issuer: %s\n",
+		cert.SerialNumber.String(),
+		cert.Issuer.String())
 
 	return certificateInfo.String()
 }
