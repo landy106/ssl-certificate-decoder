@@ -61,6 +61,12 @@ and end with "-----END CERTIFICATE----- "`)
 				dialog.ShowError(fmt.Errorf("Error: Read file content failed: %v\n", err), w)
 				continue
 			}
+
+			if !strings.Contains(string(content), "-----BEGIN CERTIFICATE-----") {
+				dialog.ShowError(fmt.Errorf("The file content should start with -----BEGIN CERTIFICATE-----"), w)
+				continue
+			}
+
 			input.SetText(string(content))
 
 			out := GetCertificateInfo(content)
